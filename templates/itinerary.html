@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plan a Brewery Day — NC Breweries</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"
+    integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD7wGNIcPD7Txa"
+    crossorigin="anonymous"></script>
+  <style>
+    body { background: #faf6ef; }
+    .brew-header { text-align: center; margin: 18px 0 6px; }
+    .brew-header h1 { color: #8a4b08; }
+    .panel-brew { border-color: #e3c98f; }
+    .panel-brew > .panel-heading { background: #f7e8c8; color: #6b3d05; font-weight: bold; }
+    .result-row, .stop-card {
+      background: #fff; border: 1px solid #e3c98f; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 8px;
+    }
+    .result-row .btn, .stop-card .btn { margin: 2px; }
+    .kind-badge {
+      display: inline-block; font-size: 12px; background: #f7e8c8; color: #6b3d05;
+      border-radius: 10px; padding: 2px 10px; margin-left: 6px;
+    }
+    .stop-addr { color: #666; font-size: 13px; }
+    .route-leg {
+      text-align: center; color: #6b3d05; font-weight: bold;
+      border-left: 3px solid #d9a441; margin: 0 0 0 22px; padding: 6px 0;
+    }
+    .timeline-num {
+      display: inline-block; width: 26px; height: 26px; border-radius: 50%;
+      background: #d9a441; color: #fff; text-align: center; line-height: 26px;
+      font-weight: bold; margin-right: 8px;
+    }
+    .empty-note { color: #999; font-style: italic; }
+    #nearbyKinds .btn.active { background: #d9a441; color: #fff; border-color: #b57f22; }
+    @media (hover: hover) {
+      .result-row:hover, .stop-card:hover { box-shadow: 0 2px 10px rgba(180,130,40,.25); }
+      #nearbyKinds .btn:hover { border-color: #b57f22; }
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-default">
+    <div class="container-fluid">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle collapsed" data-toggle="collapse"
+          data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+        <a class="navbar-brand" href="/">NC Breweries</a>
+      </div>
+      <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+        <ul class="nav navbar-nav navbar-right">
+          <li><a href="/beerList">Find</a></li>
+          <li><a href="/beerMap">Map</a></li>
+          <li><a href="/itinerary">Plan a Day</a></li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="brew-header">
+      <h1>🍺 Plan a Brewery Day</h1>
+      <p>Pick a starting brewery, find what's nearby, and build your day stop by stop.</p>
+    </div>
+
+    <div class="row">
+      <div class="col-md-5">
+        <div class="panel panel-brew">
+          <div class="panel-heading">1 · Pick a starting brewery</div>
+          <div class="panel-body">
+            <div class="input-group">
+              <input id="searchBox" type="text" class="form-control" placeholder="e.g. Trophy Brewing">
+              <span class="input-group-btn">
+                <button id="searchBtn" class="btn btn-warning" type="button">Search</button>
+              </span>
+            </div>
+            <div id="searchResults" style="margin-top:10px;"></div>
+          </div>
+        </div>
+
+        <div class="panel panel-brew">
+          <div class="panel-heading">2 · Find nearby</div>
+          <div class="panel-body">
+            <p class="text-muted" style="font-size:13px;">Shows what's around your first stop.</p>
+            <div id="nearbyKinds" class="btn-group btn-group-justified" role="group">
+              <a class="btn btn-default" data-kind="breweries">🍺<br>Breweries</a>
+              <a class="btn btn-default" data-kind="restaurants">🍽️<br>Food</a>
+              <a class="btn btn-default" data-kind="museums">🏛️<br>Museums</a>
+              <a class="btn btn-default" data-kind="parks">🌳<br>Parks</a>
+            </div>
+            <div id="nearbyResults" style="margin-top:10px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-7">
+        <div class="panel panel-brew">
+          <div class="panel-heading">3 · Your day
+            <button id="clearDay" class="btn btn-xs btn-default pull-right">Clear day</button>
+          </div>
+          <div class="panel-body" id="timeline"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+  var STORAGE_KEY = "brewDay";
+  var stops = [];
+  try { stops = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch (e) { stops = []; }
+
+  var KIND_ICON = { brewery: "🍺", breweries: "🍺", restaurants: "🍽️", museums: "🏛️", parks: "🌳" };
+  var KIND_LABEL = { brewery: "Brewery", breweries: "Brewery", restaurants: "Restaurant", museums: "Museum", parks: "Park" };
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stops)); } catch (e) {} }
+  function digits(phone) { return String(phone || "").replace(/\D/g, ""); }
+  function webUrl(raw) {
+    if (!raw) return null;
+    var u = String(raw).trim();
+    if (!u) return null;
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    return u;
+  }
+
+  function stopCard(stop, idx) {
+    var icon = KIND_ICON[stop.kind] || "📍";
+    var label = KIND_LABEL[stop.kind] || stop.kind;
+    var html = '<div class="stop-card">' +
+      '<span class="timeline-num">' + (idx + 1) + '</span>' +
+      '<strong>' + esc(stop.name) + '</strong>' +
+      '<span class="kind-badge">' + icon + " " + esc(label) + "</span><br>" +
+      (stop.address ? '<div class="stop-addr">' + esc(stop.address) + "</div>" : "") +
+      '<div style="margin-top:6px;">';
+    if (digits(stop.phone)) html += '<a class="btn btn-xs btn-default" href="tel:' + digits(stop.phone) + '">📞 ' + esc(stop.phone) + "</a> ";
+    var site = webUrl(stop.website_url);
+    if (site) html += '<a class="btn btn-xs btn-default" href="' + esc(site) + '" target="_blank" rel="noopener">🌐 Website</a> ';
+    html += '<span class="pull-right">' +
+      (idx > 0 ? '<button class="btn btn-xs btn-default" data-act="up" data-i="' + idx + '" title="Move earlier">↑</button>' : "") +
+      (idx < stops.length - 1 ? '<button class="btn btn-xs btn-default" data-act="down" data-i="' + idx + '" title="Move later">↓</button>' : "") +
+      ' <button class="btn btn-xs btn-danger" data-act="rm" data-i="' + idx + '">Remove</button></span>' +
+      "</div></div>";
+    return html;
+  }
+
+  function renderTimeline() {
+    var box = document.getElementById("timeline");
+    if (!stops.length) {
+      box.innerHTML = '<p class="empty-note">No stops yet — search for a brewery to get rolling.</p>';
+      return;
+    }
+    var html = "";
+    stops.forEach(function (s, i) {
+      if (i > 0) html += '<div class="route-leg" data-leg="' + (i - 1) + '">🚗 calculating…</div>';
+      html += stopCard(s, i);
+    });
+    box.innerHTML = html;
+    // drive times between consecutive stops
+    for (var i = 0; i < stops.length - 1; i++) (function (i) {
+      var a = stops[i], b = stops[i + 1];
+      if (a.lng == null || b.lng == null) return setLeg(i, "📍 address needed for drive time");
+      fetch("/api/route?from=" + a.lng + "," + a.lat + "&to=" + b.lng + "," + b.lat)
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          setLeg(i, d.duration_text
+            ? "🚗 " + d.duration_text + (d.distance_text ? " · " + d.distance_text : "")
+            : "🚗 drive time unavailable");
+        })
+        .catch(function () { setLeg(i, "🚗 drive time unavailable"); });
+    })(i);
+    function setLeg(i, text) {
+      var el = box.querySelector('[data-leg="' + i + '"]');
+      if (el) el.textContent = text;
+    }
+  }
+
+  function addStop(raw, kind) {
+    var stop = {
+      name: raw.name,
+      kind: kind || "brewery",
+      address: raw.address || [raw.street, raw.city, raw.state].filter(Boolean).join(", ") || null,
+      phone: raw.phone || null,
+      website_url: raw.website_url || raw.website || null,
+      lat: raw.latitude != null ? raw.latitude : raw.lat,
+      lng: raw.longitude != null ? raw.longitude : raw.lng
+    };
+    stops.push(stop);
+    save();
+    renderTimeline();
+  }
+
+  document.getElementById("timeline").addEventListener("click", function (e) {
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var i = parseInt(btn.getAttribute("data-i"), 10);
+    var act = btn.getAttribute("data-act");
+    if (act === "rm") stops.splice(i, 1);
+    else if (act === "up" && i > 0) stops.splice(i - 1, 0, stops.splice(i, 1)[0]);
+    else if (act === "down" && i < stops.length - 1) stops.splice(i + 1, 0, stops.splice(i, 1)[0]);
+    save();
+    renderTimeline();
+  });
+
+  document.getElementById("clearDay").addEventListener("click", function () {
+    if (!stops.length || confirm("Clear your whole day?")) { stops = []; save(); renderTimeline(); }
+  });
+
+  // --- brewery search ---
+  function doSearch() {
+    var q = document.getElementById("searchBox").value.trim();
+    var box = document.getElementById("searchResults");
+    if (!q) return;
+    box.innerHTML = '<p class="empty-note">Searching…</p>';
+    fetch("/api/breweries/search?q=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.length) { box.innerHTML = '<p class="empty-note">No NC breweries found for that name.</p>'; return; }
+        box.innerHTML = data.map(function (b, i) {
+          var canAdd = b.latitude != null && b.longitude != null;
+          return '<div class="result-row"><strong>' + esc(b.name) + "</strong> " +
+            '<span class="kind-badge">🍺 ' + esc(b.brewery_type || "brewery") + "</span><br>" +
+            '<span class="stop-addr">' + esc([b.street, b.city].filter(Boolean).join(", ")) + "</span>" +
+            '<div style="margin-top:4px;"><button class="btn btn-xs btn-warning" data-b="' + i + '"' +
+            (canAdd ? "" : " disabled") + ">" + (canAdd ? "Add stop" : "No map location") + "</button></div></div>";
+        }).join("");
+        box.querySelectorAll("button[data-b]").forEach(function (btn) {
+          btn.addEventListener("click", function () { addStop(data[+btn.getAttribute("data-b")], "brewery"); });
+        });
+      })
+      .catch(function () { box.innerHTML = '<p class="empty-note">Search failed — check your connection and try again.</p>'; });
+  }
+  document.getElementById("searchBtn").addEventListener("click", doSearch);
+  document.getElementById("searchBox").addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
+
+  // --- nearby panel ---
+  document.getElementById("nearbyKinds").addEventListener("click", function (e) {
+    var btn = e.target.closest("a[data-kind]");
+    if (!btn) return;
+    var kind = btn.getAttribute("data-kind");
+    var box = document.getElementById("nearbyResults");
+    Array.prototype.forEach.call(this.querySelectorAll("a"), function (a) { a.classList.remove("active"); });
+    btn.classList.add("active");
+    if (!stops.length) { box.innerHTML = '<p class="empty-note">Add a starting brewery first — nearby is measured from stop #1.</p>'; return; }
+    var a = stops[0];
+    if (a.lat == null || a.lng == null) { box.innerHTML = '<p class="empty-note">Your first stop has no map location.</p>'; return; }
+    box.innerHTML = '<p class="empty-note">Looking nearby…</p>';
+    var url = kind === "breweries"
+      ? "/api/nearby/breweries?lat=" + a.lat + "&lng=" + a.lng
+      : "/api/nearby/places?lat=" + a.lat + "&lng=" + a.lng + "&kind=" + kind;
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      var items = data.places || data;  // places endpoint wraps; breweries is a plain list
+      var warn = data.warning ? '<p class="empty-note">' + esc(data.warning) + "</p>" : "";
+      if (!items.length) { box.innerHTML = warn + '<p class="empty-note">Nothing found nearby.</p>'; return; }
+      box.innerHTML = warn + items.map(function (p, i) {
+        var plat = p.lat != null ? p.lat : p.latitude;
+        var plng = p.lng != null ? p.lng : p.longitude;
+        var canAdd = plat != null && plng != null;
+        return '<div class="result-row"><strong>' + esc(p.name) + "</strong> " +
+          '<span class="kind-badge">' + KIND_ICON[kind] + " " + esc(KIND_LABEL[kind]) + "</span><br>" +
+          '<span class="stop-addr">' + esc(p.address || [p.street, p.city].filter(Boolean).join(", ")) + "</span>" +
+          '<div style="margin-top:4px;"><button class="btn btn-xs btn-warning" data-p="' + i + '"' +
+          (canAdd ? "" : " disabled") + ">Add stop</button></div></div>";
+      }).join("");
+      box.querySelectorAll("button[data-p]").forEach(function (b) {
+        b.addEventListener("click", function () { addStop(items[+b.getAttribute("data-p")], kind); });
+      });
+    }).catch(function () { box.innerHTML = '<p class="empty-note">Lookup failed — try again in a bit.</p>'; });
+  });
+
+  renderTimeline();
+})();
+</script>
+</body>
+</html>
